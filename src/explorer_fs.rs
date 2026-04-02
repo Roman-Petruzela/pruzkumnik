@@ -44,6 +44,24 @@ pub fn drive_root(letter: char) -> PathBuf {
     PathBuf::from(format!("{}:\\", letter.to_ascii_uppercase()))
 }
 
+pub fn available_volumes() -> Vec<PathBuf> {
+    let mut volumes = Vec::new();
+
+    for letter in 'C'..='Z' {
+        let root = drive_root(letter);
+        if root.exists() {
+            volumes.push(root);
+        }
+    }
+
+    volumes
+}
+
+pub fn volume_label(index: usize, path: &Path) -> String {
+    let display = path.display().to_string();
+    format!("{}: {}", index + 1, display)
+}
+
 pub fn read_preview(path: &Path, max_bytes: usize) -> io::Result<String> {
     if is_zip_file(path) {
         return read_zip_preview(path);
