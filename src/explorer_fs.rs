@@ -1,7 +1,10 @@
 use std::cmp::Ordering;
+use std::fs::File;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+use zip::read::ZipArchive;
 
 #[derive(Clone, Debug)]
 pub struct EntryItem {
@@ -37,7 +40,15 @@ pub fn list_entries(current_dir: &Path) -> io::Result<Vec<EntryItem>> {
     Ok(entries)
 }
 
+pub fn drive_root(letter: char) -> PathBuf {
+    PathBuf::from(format!("{}:\\", letter.to_ascii_uppercase()))
+}
+
 pub fn read_preview(path: &Path, max_bytes: usize) -> io::Result<String> {
+    if is_zip_file(path) {
+        return read_zip_preview(path);
+    }
+
     let bytes = fs::read(path)?;
     let slice = if bytes.len() > max_bytes {
         &bytes[..max_bytes]
@@ -51,4 +62,44 @@ pub fn read_preview(path: &Path, max_bytes: usize) -> io::Result<String> {
     }
 
     Ok(text)
+}
+
+fn is_zip_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.eq_ignore_ascii_case("zip"))
+        .unwrap_or(false)
+}
+
+fn read_zip_preview(path: &Path) -> io::Result<String> {
+    let file = File::open(path)?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+
+    if archive.len() == 0 {
+        return Ok(String::from("ZIP archive is empty."));
+    }
+
+    let mut lines = Vec::new();
+    lines.push(format!("ZIP archive: {}", path.display()));
+    lines.push(String::new());
+
+    for index in 0..archive.len().min(40) {
+        let file = archive
+            .by_index(index)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+
+        if file.encrypted() {
+            return Ok(String::from("Archive is encrypted."));
+        }
+
+        let kind = if file.is_dir() { "DIR" } else { "FILE" };
+        lines.push(format!("[{kind}] {}", file.name()));
+    }
+
+    if archive.len() > 40 {
+        lines.push(String::from("... (more entries)"));
+    }
+
+    Ok(lines.join("\n"))
 }
