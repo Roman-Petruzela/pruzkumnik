@@ -74,12 +74,27 @@ pub fn read_preview(path: &Path, max_bytes: usize) -> io::Result<String> {
         &bytes
     };
 
-    let mut text = String::from_utf8_lossy(slice).into_owned();
+    let mut text = sanitize_preview_text(&String::from_utf8_lossy(slice));
     if bytes.len() > max_bytes {
         text.push_str("\n... (zkráceno)");
     }
 
     Ok(text)
+}
+
+fn sanitize_preview_text(input: &str) -> String {
+    input
+        .chars()
+        .map(|ch| {
+            if ch == '\n' || ch == '\r' || ch == '\t' {
+                ch
+            } else if ch.is_control() {
+                ' '
+            } else {
+                ch
+            }
+        })
+        .collect()
 }
 
 fn is_zip_file(path: &Path) -> bool {

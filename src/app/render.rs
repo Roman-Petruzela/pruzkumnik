@@ -47,11 +47,16 @@ impl App {
         let left_lines = self.render_directory_lines(&self.parent_entries, left_width as usize, Some(&self.current_dir), None);
         let middle_lines = self.render_scrolled_directory_lines(&self.entries, middle_width as usize, content_height);
         let right_lines = wrap_text(&self.preview, preview_width.max(20));
+        let preview_max_offset = right_lines.len().saturating_sub(content_height);
+        let preview_start = self.preview_scroll_offset.min(preview_max_offset);
 
         for row in 0..content_height {
             let left = left_lines.get(row).cloned().unwrap_or_default();
             let middle = middle_lines.get(row).cloned().unwrap_or_default();
-            let right = right_lines.get(row).cloned().unwrap_or_default();
+            let right = right_lines
+                .get(preview_start + row)
+                .cloned()
+                .unwrap_or_default();
 
             execute!(
                 out,
@@ -220,13 +225,31 @@ impl App {
         } else if self.selected >= vis_end {
             let visible_items = vis_end.saturating_sub(vis_start).max(1);
             self.scroll_offset = self.selected + 1 - visible_items;
-        } else if self.selected + 2 >= vis_end && vis_end < self.entries.len() {
-            self.scroll_offset = self.scroll_offset.saturating_add(1);
-        } else if self.selected == vis_start && self.scroll_offset > 0 {
-            self.scroll_offset = self.scroll_offset.saturating_sub(1);
         }
 
         self.scroll_offset = self.scroll_offset.min(self.max_scroll_start(rows));
+    }
+
+    pub(crate) fn scroll_preview_by(&mut self, delta: isize) {
+        let (width, height) = terminal::size().unwrap_or((80, 24));
+        let (_, _, right_width) = three_column_widths(width);
+        let rows = self.current_list_rows_from_height(height).max(1);
+        let preview_width = right_width as usize;
+        let wrapped = wrap_text(&self.preview, preview_width.max(20));
+        let max_offset = wrapped.len().saturating_sub(rows);
+
+        let next = if delta.is_negative() {
+            self.preview_scroll_offset.saturating_sub(delta.unsigned_abs())
+        } else {
+            self.preview_scroll_offset.saturating_add(delta as usize)
+        };
+
+        self.preview_scroll_offset = next.min(max_offset);
+        self.status = format!(
+            "Preview scroll: {}/{}",
+            self.preview_scroll_offset,
+            max_offset
+        );
     }
 
     pub(crate) fn clamp_scroll_to_selection(&mut self, rows: usize) {
@@ -321,7 +344,7 @@ impl App {
 
         let mut lines = Vec::new();
         for (index, item) in entries.iter().enumerate() {
-            let prefix = if item.is_dir { "[/]" } else if item.is_file { "[FILE]" } else { "[ITEM]" };
+            let prefix = if item.is_dir { "[/]" } else if item.is_file { "[.]" } else { "[?]" };
             let body = format!("{} {}", prefix, item.name);
             let should_highlight = selected_index.is_some_and(|selected| selected == index)
                 || highlight_path.is_some_and(|path| path == &item.path);

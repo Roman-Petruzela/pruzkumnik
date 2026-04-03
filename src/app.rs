@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent},
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -61,10 +61,12 @@ struct App {
     selected: usize,
     status: String,
     preview: String,
+    preview_scroll_offset: usize,
     clipboard: Option<ClipboardItem>,
     modal: Option<Modal>,
     scroll_offset: usize,
     navigation_history: HashMap<PathBuf, NavigationState>,
+    shift_filter_query: String,
 }
 
 #[derive(Clone, Copy)]
@@ -98,11 +100,13 @@ impl App {
             volumes,
             selected: 0,
             scroll_offset: 0,
-            status: String::from("Arrow keys move | Enter opens files in Notepad | H help | Q quit"),
+            status: String::from("Arrows move | 1-9 (layout-aware) switch volumes | Enter opens files in Notepad | H help | Q quit"),
             preview: String::from("Select a folder or file."),
+            preview_scroll_offset: 0,
             clipboard: None,
             modal: None,
             navigation_history: HashMap::new(),
+            shift_filter_query: String::new(),
         };
 
         app.update_preview();
@@ -114,30 +118,61 @@ impl App {
             return self.handle_modal_key(key, modal);
         }
 
+        let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
+        if !shift_pressed {
+            self.shift_filter_query.clear();
+        }
+
+        if shift_pressed {
+            match key.code {
+                KeyCode::Up => {
+                    self.scroll_preview_by(-1);
+                    return Ok(true);
+                }
+                KeyCode::Down => {
+                    self.scroll_preview_by(1);
+                    return Ok(true);
+                }
+                KeyCode::Backspace => {
+                    self.shift_filter_query.pop();
+                    self.jump_to_shift_filter_match();
+                    return Ok(true);
+                }
+                KeyCode::Esc => {
+                    self.shift_filter_query.clear();
+                    self.status = String::from("Shift filter cleared.");
+                    return Ok(true);
+                }
+                KeyCode::Char(ch) if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.') => {
+                    self.shift_filter_query.push(ch.to_ascii_lowercase());
+                    self.jump_to_shift_filter_match();
+                    return Ok(true);
+                }
+                _ => {}
+            }
+        }
+
         match key.code {
-            KeyCode::Char('q') | KeyCode::Char('Q') => return Ok(false),
-            KeyCode::Char('h') | KeyCode::Char('H') => {
-                self.modal = Some(Modal::Help);
-            }
-            KeyCode::Char('r') | KeyCode::Char('R') => {
-                self.status = String::from("Refreshing folder contents.");
-                self.reload()?;
-            }
-            KeyCode::Char('c') | KeyCode::Char('C') => self.copy_selected(),
-            KeyCode::Char('x') | KeyCode::Char('X') => self.cut_selected(),
-            KeyCode::Char('v') | KeyCode::Char('V') => {
-                self.paste_selected()?;
-            }
-            KeyCode::Char('d') | KeyCode::Char('D') => self.request_delete(),
-            KeyCode::Char('1') => self.switch_root(0)?,
-            KeyCode::Char('2') => self.switch_root(1)?,
-            KeyCode::Char('3') => self.switch_root(2)?,
-            KeyCode::Char('4') => self.switch_root(3)?,
-            KeyCode::Char('5') => self.switch_root(4)?,
-            KeyCode::Char('6') => self.switch_root(5)?,
-            KeyCode::Char('7') => self.switch_root(6)?,
-            KeyCode::Char('8') => self.switch_root(7)?,
-            KeyCode::Char('9') => self.switch_root(8)?,
+            KeyCode::Char(ch) => match ch.to_ascii_lowercase() {
+                'q' => return Ok(false),
+                'h' => {
+                    self.modal = Some(Modal::Help);
+                }
+                'r' => {
+                    self.status = String::from("Refreshing folder contents.");
+                    self.reload()?;
+                }
+                'c' => self.copy_selected(),
+                'x' => self.cut_selected(),
+                'v' => self.paste_selected()?,
+                'd' => self.request_delete(),
+                
+                _ => {
+                    if let Some(index) = volume_shortcut_index(ch) {
+                        self.switch_root(index)?;
+                    }
+                }
+            },
             KeyCode::Up => {
                 if self.selected > 0 {
                     self.selected -= 1;
@@ -159,13 +194,14 @@ impl App {
                 let step = rows.saturating_sub(2).max(1);
                 self.scroll_offset = self.scroll_offset.saturating_sub(step);
                 self.selected = self.selected.saturating_sub(step);
+                self.ensure_selected_visible(rows);
                 self.update_preview();
             }
             KeyCode::PageDown => {
                 let rows = self.current_list_rows().unwrap_or(1).max(1);
                 let step = rows.saturating_sub(2).max(1);
-                self.scroll_offset = (self.scroll_offset + step).min(self.max_scroll_start(rows));
                 self.selected = (self.selected + step).min(self.entries.len().saturating_sub(1));
+                self.ensure_selected_visible(rows);
                 self.update_preview();
             }
             KeyCode::Home => {
@@ -230,5 +266,20 @@ impl App {
         }
 
         Ok(true)
+    }
+}
+
+fn volume_shortcut_index(ch: char) -> Option<usize> {
+    match ch {
+        '1' | '+' | '!' => Some(0),
+        '2' | 'ě' | 'Ě' | '@' => Some(1),
+        '3' | 'š' | 'Š' | '#' => Some(2),
+        '4' | 'č' | 'Č' | '$' => Some(3),
+        '5' | 'ř' | 'Ř' | '%' => Some(4),
+        '6' | 'ž' | 'Ž' | '^' => Some(5),
+        '7' | 'ý' | 'Ý' | '&' => Some(6),
+        '8' | 'á' | 'Á' | '*' => Some(7),
+        '9' | 'í' | 'Í' | '(' => Some(8),
+        _ => None,
     }
 }

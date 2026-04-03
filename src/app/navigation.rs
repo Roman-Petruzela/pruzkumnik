@@ -113,5 +113,31 @@ impl App {
         } else {
             self.preview = String::from("This folder is empty.");
         }
+
+        self.preview_scroll_offset = 0;
+    }
+
+    pub(crate) fn jump_to_shift_filter_match(&mut self) {
+        if self.shift_filter_query.is_empty() {
+            self.status = String::from("Shift filter: (empty)");
+            return;
+        }
+
+        let query = self.shift_filter_query.to_lowercase();
+        if let Some((index, matched_name)) = self
+            .entries
+            .iter()
+            .enumerate()
+            .find(|(_, item)| item.name.to_lowercase().starts_with(&query))
+            .map(|(index, item)| (index, item.name.clone()))
+        {
+            self.selected = index;
+            let rows = self.current_list_rows().unwrap_or(1).max(1);
+            self.ensure_selected_visible(rows);
+            self.update_preview();
+            self.status = format!("Shift filter: '{}' -> {}", self.shift_filter_query, matched_name);
+        } else {
+            self.status = format!("Shift filter: '{}' (no match)", self.shift_filter_query);
+        }
     }
 }
