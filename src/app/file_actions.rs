@@ -1,9 +1,8 @@
 use std::io;
 use std::path::PathBuf;
 
-use crate::actions::{delete_path, paste_clipboard, ClipboardItem, ClipboardMode};
-
-use super::*;
+use crate::fs_operations::{delete_path, paste_clipboard};
+use crate::types::{App, ClipboardItem, ClipboardMode, Modal};
 
 impl App {
     pub(crate) fn copy_selected(&mut self) {

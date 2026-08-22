@@ -12,27 +12,29 @@ The program runs in the terminal, so it feels like a small GUI without leaving t
 
 - Navigate folders with the keyboard
 - Open folders with `Right Arrow` or `Enter`
-- Open files in Notepad with `Enter`
+- Open files in the platform default application with `Enter`
 - Show a help screen with `H`
 - Copy, cut, paste, and delete files
 - Ask for confirmation before delete
 - Preview text files and ZIP archives
 - Detect encrypted ZIP archives and show `Archive is encrypted.`
-- Switch root drives with `1`, `2`, `3`, `4`
+- Switch available roots with `1` through `9`
 - Wrap preview text when the window size changes
+
+The explorer runs on Windows and Linux. On Windows it uses drive letters as roots; on Linux it starts from `/` and common mount locations when they are present.
 
 ## Controls
 
 - `Up` / `Down` - move the selection in the current folder
 - `Right Arrow` - enter a folder
-- `Enter` - enter a folder or open a file in Notepad
+- `Enter` - enter a folder or open a file
 - `Backspace` / `Left Arrow` - go to the parent folder
 - `H` - show or hide help
 - `C` - copy the selected item
 - `X` - cut the selected item
 - `V` - paste into the current folder
 - `D` - delete the selected item
-- `1`, `2`, `3`, `4` - switch to drives `C:`, `D:`, `E:`, `F:`
+- `1` through `9` - switch to available roots
 - `R` - refresh the current view
 - `Q` - quit the program
 
@@ -68,5 +70,5 @@ cargo run
 
 ## Notes
 
-- The app is designed for Windows, because it opens files in Notepad and can switch drive roots.
+- The app is designed to work on Windows and Linux.
 - ZIP preview only reads the archive structure. It does not extract files.

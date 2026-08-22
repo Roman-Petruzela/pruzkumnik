@@ -8,11 +8,9 @@ use crossterm::{
     terminal::{self, Clear, ClearType},
 };
 
-use crate::actions::ClipboardMode;
-use crate::explorer_fs::volume_label;
+use crate::fs_operations::volume_label;
 use crate::help::help_lines;
-
-use super::*;
+use crate::types::{App, ClipboardMode, EntryItem, Modal};
 
 impl App {
     pub(crate) fn render(&self) -> io::Result<()> {
@@ -31,18 +29,18 @@ impl App {
         execute!(
             out,
             SetForegroundColor(Color::Cyan),
-            Print(format!("File Explorer - {}\n", self.current_dir.display())),
+            Print(format!("File Explorer - {}\r\n", self.current_dir.display())),
             ResetColor,
-            Print("Controls: arrows move | Right enters folders | Enter opens files in Notepad | H help | Q quit\n\n"),
+            Print("Controls: arrows move | Right enters folders | Enter opens files | H help | Q quit\r\n\r\n"),
         )?;
 
-        execute!(out, SetForegroundColor(Color::DarkGrey), Print(self.volume_summary(width as usize)), ResetColor, Print("\n"))?;
+        execute!(out, SetForegroundColor(Color::DarkGrey), Print(self.volume_summary(width as usize)), ResetColor, Print("\r\n"))?;
 
         execute!(out, SetForegroundColor(Color::Yellow), Print(self.panel_title("Parent", self.parent_dir.as_ref())), ResetColor)?;
         execute!(out, Print(" | "))?;
         execute!(out, SetForegroundColor(Color::Yellow), Print(self.panel_title("Current", Some(&self.current_dir))), ResetColor)?;
         execute!(out, Print(" | "))?;
-        execute!(out, SetForegroundColor(Color::Yellow), Print(self.panel_title("Preview", None)), ResetColor, Print("\n"))?;
+        execute!(out, SetForegroundColor(Color::Yellow), Print(self.panel_title("Preview", None)), ResetColor, Print("\r\n"))?;
 
         let left_lines = self.render_directory_lines(&self.parent_entries, left_width as usize, Some(&self.current_dir), None);
         let middle_lines = self.render_scrolled_directory_lines(&self.entries, middle_width as usize, content_height);
@@ -65,7 +63,7 @@ impl App {
                 Print(fit_text(&middle, middle_width as usize)),
                 Print(" | "),
                 Print(clip_text(&right, preview_width.max(20))),
-                Print("\n"),
+                Print("\r\n"),
             )?;
         }
 
@@ -123,11 +121,11 @@ impl App {
             SetForegroundColor(Color::Cyan),
             Print(fit_text("Help", width as usize)),
             ResetColor,
-            Print("\n\n"),
+            Print("\r\n\r\n"),
         )?;
 
         for line in content.iter().take(visible) {
-            execute!(out, Print(fit_text(line, width.saturating_sub(4) as usize)), Print("\n"))?;
+            execute!(out, Print(fit_text(line, width.saturating_sub(4) as usize)), Print("\r\n"))?;
         }
 
         let footer = "Press H, Esc, or Enter to close help.";

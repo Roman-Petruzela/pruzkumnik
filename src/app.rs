@@ -1,18 +1,19 @@
 use std::io::{self, stdout};
-use std::path::PathBuf;
 use std::collections::HashMap;
 
 use crossterm::{
     cursor,
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{Event, KeyCode, KeyEvent},
     execute,
     terminal::{self, EnterAlternateScreen, LeaveAlternateScreen},
 };
 
-use crate::actions::{open_in_notepad, ClipboardItem};
-use crate::explorer_fs::{available_volumes, list_entries, EntryItem};
+use crate::fs_operations::{available_volumes, list_entries, open_with_default_app};
+use crate::types::{App, Modal};
 
 mod file_actions;
+mod keys;
+mod modals;
 mod navigation;
 mod render;
 
@@ -35,7 +36,7 @@ fn run_app() -> io::Result<()> {
     app.render()?;
 
     loop {
-        match event::read()? {
+        match crossterm::event::read()? {
             Event::Key(key) if key.kind == crossterm::event::KeyEventKind::Press => {
                 if !app.handle_key(key)? {
                     break;
@@ -50,35 +51,6 @@ fn run_app() -> io::Result<()> {
     }
 
     Ok(())
-}
-
-struct App {
-    current_dir: PathBuf,
-    parent_dir: Option<PathBuf>,
-    parent_entries: Vec<EntryItem>,
-    entries: Vec<EntryItem>,
-    volumes: Vec<PathBuf>,
-    selected: usize,
-    status: String,
-    preview: String,
-    preview_scroll_offset: usize,
-    clipboard: Option<ClipboardItem>,
-    modal: Option<Modal>,
-    scroll_offset: usize,
-    navigation_history: HashMap<PathBuf, NavigationState>,
-    shift_filter_query: String,
-}
-
-#[derive(Clone, Copy)]
-struct NavigationState {
-    selected: usize,
-    scroll_offset: usize,
-}
-
-#[derive(Clone)]
-enum Modal {
-    Help,
-    ConfirmDelete { path: PathBuf, label: String },
 }
 
 impl App {
@@ -100,7 +72,7 @@ impl App {
             volumes,
             selected: 0,
             scroll_offset: 0,
-            status: String::from("Arrows move | 1-9 (layout-aware) switch volumes | Enter opens files in Notepad | H help | Q quit"),
+            status: String::from("Arrows move | 1-9 switch roots | Enter opens files | H help | Q quit"),
             preview: String::from("Select a folder or file."),
             preview_scroll_offset: 0,
             clipboard: None,
@@ -118,11 +90,12 @@ impl App {
             return self.handle_modal_key(key, modal);
         }
 
-        let shift_pressed = key.modifiers.contains(KeyModifiers::SHIFT);
+        let shift_pressed = keys::is_shift_pressed(&key);
         if !shift_pressed {
             self.shift_filter_query.clear();
         }
 
+        // Shift+modified keys - preview scrolling a search filtering
         if shift_pressed {
             match key.code {
                 KeyCode::Up => {
@@ -143,7 +116,7 @@ impl App {
                     self.status = String::from("Shift filter cleared.");
                     return Ok(true);
                 }
-                KeyCode::Char(ch) if ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.') => {
+                KeyCode::Char(ch) if keys::is_filter_char(ch) => {
                     self.shift_filter_query.push(ch.to_ascii_lowercase());
                     self.jump_to_shift_filter_match();
                     return Ok(true);
@@ -152,6 +125,7 @@ impl App {
             }
         }
 
+        // Normální klávesy
         match key.code {
             KeyCode::Char(ch) => match ch.to_ascii_lowercase() {
                 'q' => return Ok(false),
@@ -168,7 +142,7 @@ impl App {
                 'd' => self.request_delete(),
                 
                 _ => {
-                    if let Some(index) = volume_shortcut_index(ch) {
+                    if let Some(index) = keys::volume_shortcut_index(ch) {
                         self.switch_root(index)?;
                     }
                 }
@@ -231,8 +205,8 @@ impl App {
                     if item.is_dir {
                         self.enter_directory(item.path)?;
                     } else if item.is_file {
-                        open_in_notepad(&item.path)?;
-                        self.status = format!("Opened {} in Notepad.", item.name);
+                        open_with_default_app(&item.path)?;
+                        self.status = format!("Opened {}.", item.name);
                     }
                 }
             }
@@ -246,40 +220,26 @@ impl App {
     }
 
     fn handle_modal_key(&mut self, key: KeyEvent, modal: Modal) -> io::Result<bool> {
-        match modal {
-            Modal::Help => match key.code {
-                KeyCode::Esc | KeyCode::Char('h') | KeyCode::Char('H') | KeyCode::Enter => {
-                    self.modal = None;
-                }
-                _ => {}
-            },
-            Modal::ConfirmDelete { path, label } => match key.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    self.delete_confirmed(path, label)?;
-                }
-                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
-                    self.modal = None;
+        use crate::app::modals::{handle_modal_key, ModalResult};
+
+        match handle_modal_key(key, &modal) {
+            ModalResult::Close => {
+                self.modal = None;
+                if matches!(modal, Modal::ConfirmDelete { .. }) {
                     self.status = String::from("Delete cancelled.");
                 }
-                _ => {}
-            },
+            }
+            ModalResult::Action(action) => {
+                use crate::app::modals::ModalAction;
+                match action {
+                    ModalAction::ConfirmDelete { path, label } => {
+                        self.delete_confirmed(path, label)?;
+                    }
+                }
+            }
+            ModalResult::Continue => {}
         }
 
         Ok(true)
-    }
-}
-
-fn volume_shortcut_index(ch: char) -> Option<usize> {
-    match ch {
-        '1' | '+' | '!' => Some(0),
-        '2' | 'ě' | 'Ě' | '@' => Some(1),
-        '3' | 'š' | 'Š' | '#' => Some(2),
-        '4' | 'č' | 'Č' | '$' => Some(3),
-        '5' | 'ř' | 'Ř' | '%' => Some(4),
-        '6' | 'ž' | 'Ž' | '^' => Some(5),
-        '7' | 'ý' | 'Ý' | '&' => Some(6),
-        '8' | 'á' | 'Á' | '*' => Some(7),
-        '9' | 'í' | 'Í' | '(' => Some(8),
-        _ => None,
     }
 }

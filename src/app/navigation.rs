@@ -1,9 +1,8 @@
 use std::io;
 use std::path::PathBuf;
 
-use crate::explorer_fs::{available_volumes, list_entries, read_preview};
-
-use super::*;
+use crate::fs_operations::{available_volumes, list_entries, read_preview};
+use crate::types::{App, EntryItem, NavigationState};
 
 impl App {
     pub(crate) fn reload(&mut self) -> io::Result<()> {
